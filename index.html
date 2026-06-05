@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlakeLocator Pro - Microscopic Flake Coordinate & Measurement System</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔬</text></svg>">
+    <!-- SheetJS: try CDN first, fall back to inline mini-writer if offline -->
+    <script>
+    (function(){
+        var s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onerror = function(){
+            // Offline fallback: minimal XLSX writer (SpreadsheetML XML wrapped in a Blob)
+            window.XLSX = {
+                utils: {
+                    aoa_to_sheet: function(data){ return { _data: data }; },
+                    book_new: function(){ return { _sheets: [], _names: [] }; },
+                    book_append_sheet: function(wb, ws, name){ wb._sheets.push(ws); wb._names.push(name); }
+                },
+                writeFile: function(wb, fileName){
+                    // Build a simple multi-sheet CSV (tab-separated) as fallback
+                    var content = wb._sheets.map(function(ws, i){
+                        var name = wb._names[i] || ('Sheet'+(i+1));
+                        var rows = (ws._data || []).map(function(row){
+                            return (row || []).map(function(c){
+                                var v = (c === null || c === undefined) ? '' : String(c);
+                                return v.indexOf(',') >= 0 || v.indexOf('"') >= 0 ? '"'+v.replace(/"/g,'""')+'"' : v;
+                            }).join(',');
+                        }).join('\r\n');
+                        return '--- ' + name + ' ---\r\n' + rows;
+                    }).join('\r\n\r\n');
+                    var blob = new Blob([content], { type: 'text/csv' });
+                    var a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = fileName.replace(/\.xlsx$/i, '.csv');
+                    a.click();
+                    if(window.showToast) showToast('Offline: saved as CSV instead of Excel', 'warning');
+                }
+            };
+        };
+        document.head.appendChild(s);
+    })();
+    </script>
+</head>
+<body>
+
+    <!-- Header Panel -->
+    <header>
+        <div class="brand-section">
+            <div class="logo-badge">🔬</div>
+            <h1>FlakeLocator Pro <span>LITHOGRAPHY SYSTEM</span></h1>
+        </div>
+        
+        <div class="header-actions">
+
+            <!-- Cluster 1: Session -->
+            <input type="file" id="image-upload" class="file-input" accept="image/*" multiple>
+            <div class="header-btn-cluster">
+                <!-- Backup -->
+                <button id="btn-export-json" class="header-btn" title="Backup entire session to JSON">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Backup
+                </button>
+                <!-- Restore (different icon: cloud download) -->
+                <input type="file" id="json-import-input" class="file-input" accept=".json">
+                <button id="btn-import-json" class="header-btn" title="Restore session from JSON backup">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"></path></svg>
+                    Restore
+                </button>
+            </div>
+
+            <div class="header-divider"></div>
+
+            <!-- Cluster 2: Stats & Stage -->
+            <div class="header-btn-cluster">
+                <button id="btn-stats" class="header-btn" title="Statistical Dashboard — flake distributions, coverage, layer analysis">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    Stats
+                </button>
+                <div class="header-btn-cluster-sep"></div>
+                <button id="btn-stage-export" class="header-btn" title="Export flake centroids as motorized stage coordinate scripts">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                    Stage
+                </button>
+            </div>
+
+            <div class="header-divider"></div>
+
+            <!-- Cluster 3: Exports -->
+            <div class="header-btn-cluster">
+                <button id="btn-export-csv" class="header-btn" title="Export all flake measurements as CSV">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                    CSV
+                </button>
+                <div class="header-btn-cluster-sep"></div>
+                <button id="btn-export-excel" class="header-btn" title="Export all flake measurements as Excel (.xlsx)" style="color:var(--primary);">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/><path d="m7 13 2 4 2-4"/><path d="M15 13h4M15 17h4"/></svg>
+                    Excel
+                </button>
+                <div class="header-btn-cluster-sep"></div>
+                <button id="btn-export-jpg" class="header-btn" title="Export annotated composite image as JPG">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    JPG
+                </button>
+            </div>
+
+            <div class="header-divider"></div>
+
+            <!-- Undo / Redo Button Group -->
+            <div class="header-btn-group">
+                <button id="btn-undo" class="undo-redo-btn-sm" title="Undo (Ctrl+Z)" disabled>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 7v6h6"></path><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path>
+                    </svg>
+                </button>
+                <button id="btn-redo" class="undo-redo-btn-sm" title="Redo (Ctrl+Y)" disabled>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="header-divider"></div>
+
+            <!-- Utility icon-only buttons -->
+            <!-- Dark / Light Theme Toggle -->
+            <button id="btn-theme-toggle" class="header-icon-btn" title="Toggle Dark / Light theme" onclick="toggleTheme()" aria-label="Toggle theme">🌙</button>
+
+            <!-- Keyboard Shortcuts Help -->
+            <button id="btn-shortcuts" class="header-icon-btn" title="Keyboard Shortcuts (? key)" onclick="showKeyboardShortcuts()" aria-label="Keyboard shortcuts">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>
+            </button>
+
+            <!-- Help — Tools & Parameters -->
+            <button class="header-icon-btn" title="Help — Tools &amp; Parameters" onclick="document.getElementById('help-modal').classList.add('active')" aria-label="Help">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </button>
+
+            <!-- Code / Project Files -->
+            <button class="header-icon-btn" title="Project Files &amp; Code Structure" onclick="document.getElementById('files-modal').classList.add('active')" aria-label="Project files">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            </button>
+
+            <!-- About -->
+            <button class="header-icon-btn" title="About FlakeLocator Pro" onclick="document.getElementById('about-modal').classList.add('active')" aria-label="About">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- App Grid Workspace -->
+    <main class="app-workspace">
+        
+        <!-- Left Sidebar: Substrate Library & Detection Settings -->
+        <aside class="sidebar-column" id="sidebar-left" style="grid-column: 1 / 2; grid-row: 1 / 2;">
+            <button class="sidebar-toggle-tab sidebar-toggle-left" onclick="toggleSidebar('left')" title="Collapse sidebar">
+                <svg id="sidebar-left-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div class="sidebar-content">
+
+            <!-- Substrate Images Library Card -->
+            <div class="panel-card" id="card-library">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                            <polyline points="21 15 16 10 5 21"></polyline>
+                        </svg>
+                        Substrate Library
+                    </div>
+                    <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                
+                <div class="panel-body">
+                    <label for="image-upload" class="secondary-btn-sm" style="display:flex;align-items:center;gap:0.4rem;justify-content:center;cursor:pointer;" title="Load microscopy images">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        Load
+                    </label>
+                    <div id="substrate-list" class="substrate-selector">
+                        <!-- Loaded images loaded dynamically here -->
+                    </div>
+                    <button id="btn-auto-stitch" class="secondary-btn-sm" title="Auto-Stitch: use normalized cross-correlation to automatically align overlapping images in the stitch workspace">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                        </svg>
+                        Auto-Stitch Substrate
+                    </button>
+                </div>
+            </div>
+
+            <!-- Detection Mode & Settings Panel Card -->
+            <div class="panel-card" id="card-detection">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22a7 7 0 0 0 7-7c0-4.3-7-11-7-11S5 10.7 5 15a7 7 0 0 0 7 7z"></path>
+                        </svg>
+                        Detection Settings
+                    </div>
+                    <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                
+                <div class="panel-body">
+                    <!-- Detection Mode selector -->
+                    <div class="control-group">
+                        <label class="control-label">Detection Algorithm</label>
+                        <select id="filter-colorMode">
+                            <option value="grayscale">Grayscale Threshold</option>
+                            <option value="colorDist">Color Distance</option>
+                        </select>
+                    </div>
+
+                    <!-- ── Threshold ── -->
+                    <div class="control-section-sep"></div>
+                    <div class="control-section-label">Threshold</div>
+
+                    <!-- Color Distance threshold (hidden unless colorDist mode) -->
+                    <div class="control-group filter-slider" id="colorDist-group" style="display:none;">
+                        <div class="control-label">
+                            Color Sensitivity
+                            <span class="slider-val" id="filter-colorDistThreshold-val">20</span>
+                        </div>
+                        <input type="range" id="filter-colorDistThreshold" min="5" max="120" step="1" value="20">
+                    </div>
+
+                    <!-- Grayscale Threshold slider (hidden in colorDist mode) -->
+                    <div class="control-group filter-slider" id="grayscale-threshold-group">
+                        <div class="control-label">
+                            Grayscale Threshold
+                            <span class="slider-val" id="filter-threshold-val">128</span>
+                        </div>
+                        <input type="range" id="filter-threshold" min="0" max="255" step="1" value="128">
+                    </div>
+
+                    <!-- Auto-Segment color tolerance slider -->
+                    <div class="control-group filter-slider">
+                        <div class="control-label">
+                            Flood-Fill Tolerance
+                            <span class="slider-val" id="filter-tolerance-val">255</span>
+                        </div>
+                        <input type="range" id="filter-tolerance" min="1" max="255" step="1" value="255">
+                    </div>
+
+                    <!-- ── Size Filter ── -->
+                    <div class="control-section-sep"></div>
+                    <div class="control-section-label">Size Filter</div>
+
+                    <!-- Minimum Flake Size slider -->
+                    <div class="control-group filter-slider">
+                        <div class="control-label">
+                            Min Flake Size (px)
+                            <span class="slider-val" id="filter-minSize-val">100</span>
+                        </div>
+                        <input type="range" id="filter-minSize" min="10" max="1000" step="10" value="100">
+                    </div>
+
+                    <!-- ── Display Options ── -->
+                    <div class="control-section-sep"></div>
+                    <div class="control-section-label">Display Options</div>
+
+                    <div class="checkbox-group">
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="filter-binary-toggle">
+                            <label for="filter-binary-toggle">Visualize Binary Mask</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="filter-ignore-banner" checked>
+                            <label for="filter-ignore-banner">Ignore Bottom Banner</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="filter-show-crosshairs" checked>
+                            <label for="filter-show-crosshairs">Show Dimension Crosshairs</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="filter-show-labels">
+                            <label for="filter-show-labels">Always Show Flake Labels</label>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Segmentation Options -->
+                    <div class="control-group" style="border-top:1px solid var(--border-color); padding-top:0.35rem; margin-top:0;">
+                        <span class="adv-section-label">⚗ Advanced Segmentation</span>
+                        <div class="checkbox-group" style="margin-top:0.2rem;">
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="filter-watershed-split">
+                                <label for="filter-watershed-split" title="Split merged blobs via erosion-flood analysis">Watershed Split</label>
+                            </div>
+                            <div class="checkbox-item">
+                                <input type="checkbox" id="filter-morphological">
+                                <label for="filter-morphological" title="Erode small noise clusters before detection">Morphology Cleanup</label>
+                            </div>
+                        </div>
+                        <div class="control-group filter-slider" id="morphology-kernel-group" style="display:none; margin-top:0.2rem;">
+                            <div class="control-label">Erosion Radius <span class="slider-val" id="filter-erosionKernel-val">2</span>px</div>
+                            <input type="range" id="filter-erosionKernel" min="1" max="6" step="1" value="2">
+                        </div>
+                    </div>
+
+                    <!-- Progress bar for auto-detect -->
+                    <div id="detect-progress-wrap" style="display:none; margin:0.15rem 0 0.05rem;">
+                        <div class="detect-progress-track"><div id="detect-progress-bar" class="detect-progress-fill"></div></div>
+                        <div id="detect-progress-text" class="status-msg-sm" style="margin-top:0.1rem;">Scanning…</div>
+                    </div>
+
+                    <button id="btn-auto-detect" class="primary-btn" title="Automatically scan and detect all flakes using the current threshold and tolerance settings">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                        Auto-Detect All Flakes
+                    </button>
+                </div>
+            </div>
+
+            </div><!-- /sidebar-content -->
+        </aside>
+
+        <!-- Center Workspace: Interactive High-Res Canvas -->
+        <section class="canvas-panel">
+            <!-- Horizontal drawing/annotating toolbar tab bar -->
+            <div class="canvas-toolbar">
+                <button class="tool-button active-tool" data-tool="pan" title="Pan & Zoom Image (Middle click or Spacebar drag)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"></polyline><polyline points="9 5 12 2 15 5"></polyline><polyline points="15 19 12 22 9 19"></polyline><polyline points="19 9 22 12 19 15"></polyline><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
+                    <span>Pan</span>
+                </button>
+                
+                <button class="tool-button" data-tool="scale" title="Draw line over known scale bar to calibrate pixels per µm">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><line x1="5" y1="17" x2="19" y2="17"></line><line x1="5" y1="7" x2="19" y2="7"></line></svg>
+                    <span>Calibrate</span>
+                </button>
+                
+                <button class="tool-button" data-tool="origin" title="Click anywhere to establish substrate Origin (0,0)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
+                    <span>Origin</span>
+                </button>
+
+                <button class="tool-button" data-tool="box" title="Draw standard aligned bounding box around a flake">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+                    <span>Box</span>
+                </button>
+
+                <button class="tool-button" data-tool="rbox" title="Click 3 points to draw a rotated rectangular box following flake axes">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z" transform="rotate(15 12 12)"></path></svg>
+                    <span>Rotated Box</span>
+                </button>
+
+                <button class="tool-button" data-tool="polygon" title="Click vertices to outline complex irregular shapes; click near start node to close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"></polygon></svg>
+                    <span>Polygon</span>
+                </button>
+
+                <button class="tool-button" data-tool="stitch" title="Stitch & Align: Click and drag images relative to each other">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span>Stitch</span>
+                </button>
+
+                <button class="tool-button" data-tool="snip" title="Snip Crop: Click and drag to crop and export a region of the workspace">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="6" cy="18" r="3"></circle>
+                        <line x1="9.8" y1="8.2" x2="20" y2="12"></line>
+                        <line x1="9.8" y1="15.8" x2="20" y2="12"></line>
+                        <line x1="6" y1="9" x2="6" y2="15"></line>
+                    </svg>
+                    <span>Snip Crop</span>
+                </button>
+
+                <button class="tool-button" data-tool="crop" title="Crop Image: Drag to select a region — permanently trims the active substrate image and adjusts all flake coordinates">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 2 6 6 2 6"></polyline>
+                        <polyline points="18 2 18 6 22 6"></polyline>
+                        <polyline points="6 22 6 18 2 18"></polyline>
+                        <polyline points="18 22 18 18 22 18"></polyline>
+                        <rect x="6" y="6" width="12" height="12" rx="1"></rect>
+                    </svg>
+                    <span>Crop</span>
+                </button>
+
+                <button class="tool-button" data-tool="ignore" title="Select Area to Ignore: Drag a box on canvas to ignore/exclude any flakes within that region">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3,3">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    </svg>
+                    <span>Ignore Area</span>
+                </button>
+
+                <button class="tool-button" data-tool="floodfill" title="Click inside a flake to auto-segment coordinates & OBB based on threshold tolerance">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-4.3-7-11-7-11S5 10.7 5 15a7 7 0 0 0 7 7z"></path></svg>
+                    <span>Auto-Fill</span>
+                </button>
+
+                <div class="toolbar-divider"></div>
+
+                <!-- Flake Label Colormap Selector -->
+                <div class="toolbar-colormap-wrap">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted);flex-shrink:0;pointer-events:none;"><circle cx="12" cy="12" r="10"/><path d="M8 12a4 4 0 0 1 8 0c0 2.2-1.8 4-4 4a2 2 0 0 1-2-2"/><circle cx="12" cy="8" r="1" fill="currentColor"/></svg>
+                    <select id="toolbar-colormap-select" title="Apply colormap to all flake labels" onchange="applyColormap(this.value)">
+                        <option value="">Colormap…</option>
+                        <option>Magma</option><option>Inferno</option><option>Plasma</option><option>Viridis</option>
+                        <option>Turbo</option><option>Jet</option><option>HSV</option><option>Rainbow</option>
+                        <option>Hot</option><option>Cool</option><option>Cool-Warm</option>
+                        <option>Blue-White-Red</option><option>Red-White-Blue</option><option>Grayscale</option>
+                        <option>Spectrum</option><option>Terrain</option><option>Copper</option><option>Bone</option>
+                        <option>Autumn</option><option>Winter</option><option>Spring</option><option>Summer</option>
+                        <option>Ocean</option><option>Gist Earth</option><option>Gnuplot</option><option>Gnuplot2</option>
+                        <option>Cividis</option><option>Twilight</option><option>Twilight Shifted</option>
+                        <option>Black-Body Radiation</option><option>Seismic</option>
+                        <option>RdBu</option><option>RdYlBu</option><option>RdYlGn</option>
+                        <option>Spectral</option><option>PiYG</option><option>PRGn</option>
+                        <option>BrBG</option><option>PuOr</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-divider"></div>
+
+                <!-- Image Rotation -->
+                <button class="tool-button" onclick="openRotateModal()" title="Rotate substrate image — interactive preview with drag, presets & fine-tune">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M16 3h5v5"/></svg>
+                    <span>Rotate</span>
+                </button>
+
+                <div class="toolbar-divider"></div>
+
+                <!-- Real-time HUD stats coordinates inside toolbar -->
+                <div class="toolbar-coords">
+                    <span id="cursor-pixels">Pixel: [--, --]</span>
+                    <span id="cursor-microns">Substrate: [--, --] µm</span>
+                </div>
+
+                <div class="toolbar-divider"></div>
+
+                <!-- Floating Zoom Overlay controllers inside toolbar -->
+                <div class="toolbar-zoom">
+                    <button id="zoom-out-btn" title="Zoom Out">-</button>
+                    <span id="zoom-factor">100%</span>
+                    <button id="zoom-in-btn" title="Zoom In">+</button>
+                    <button id="zoom-reset-btn" title="Reset Viewport" style="margin-left:0.25rem;">Fit</button>
+                </div>
+            </div>
+
+            <div class="canvas-container" id="canvas-container">
+                <canvas id="image-canvas"></canvas>
+            </div>
+
+            <!-- Active Substrate Filename Bar -->
+            <div class="canvas-status-bar">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.35rem; color: var(--secondary-light);"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                <span>Active Substrate: <strong id="active-substrate-name">--</strong></span>
+            </div>
+        </section>
+
+        <!-- Right Sidebar: Calibration, Detection, Inventory -->
+        <aside class="sidebar-column sidebar-right" id="sidebar-right" style="grid-column: 3 / 4; grid-row: 1 / 2;">
+            <button class="sidebar-toggle-tab sidebar-toggle-right" onclick="toggleSidebar('right')" title="Collapse sidebar">
+                <svg id="sidebar-right-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+            <div class="sidebar-content">
+            <!-- Microscope Calibration Card -->
+            <div class="panel-card" id="card-calibration">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="3" x2="9" y2="21"></line>
+                            <line x1="15" y1="3" x2="15" y2="21"></line>
+                            <line x1="3" y1="9" x2="21" y2="9"></line>
+                            <line x1="3" y1="15" x2="21" y2="15"></line>
+                        </svg>
+                        Calibration & Coordinates
+                    </div>
+                    <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                
+                <div class="panel-body">
+                    <!-- Calibration Unit Settings -->
+                    <div class="control-group">
+                        <label class="control-label" for="input-scale">
+                            Scale Calibration
+                            <span class="unit-helper">px / µm</span>
+                        </label>
+                        <div class="input-unit-wrapper">
+                            <input type="number" id="input-scale" step="0.001" min="0.001" value="1.000">
+                            <span class="input-unit">px/µm</span>
+                        </div>
+                        <button id="btn-auto-scale" class="secondary-btn-sm" title="Auto-detect scale bar line in bottom region and calibrate">
+                            🔍 Auto-Detect Scale Bar
+                        </button>
+                    </div>
+
+                    <!-- Substrate Alignment Settings -->
+                    <div class="control-group">
+                        <label class="control-label">Alignment Origin (0,0)</label>
+                        <div class="grid-2col">
+                            <div class="input-unit-wrapper">
+                                <input type="number" id="input-origin-x" placeholder="X (px)">
+                                <span class="input-unit">X</span>
+                            </div>
+                            <div class="input-unit-wrapper">
+                                <input type="number" id="input-origin-y" placeholder="Y (px)">
+                                <span class="input-unit">Y</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Lithography Axis Mapping Selection -->
+                    <div class="control-group">
+                        <label class="control-label" for="input-axis-y">Grid Coordinate Space</label>
+                        <select id="input-axis-y">
+                            <option value="cartesian">Cartesian [Y increases Upwards]</option>
+                            <option value="image">Image-Space [Y increases Downwards]</option>
+                        </select>
+                    </div>
+                    
+                    <button id="btn-grid-layout" class="primary-btn-sm" title="Matrix Grid Upload: Define a rows×cols grid and assign one region image per cell for full-substrate coverage">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                            <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                        </svg>
+                        Matrix Grid Setup
+                    </button>
+                </div>
+            </div>
+
+            <!-- Image Adjustments Panel Card -->
+            <div class="panel-card" id="card-adjustments">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="20" x2="18" y2="10"></line>
+                            <line x1="12" y1="20" x2="12" y2="4"></line>
+                            <line x1="6" y1="20" x2="6" y2="14"></line>
+                        </svg>
+                        Adjustments & Filters
+                    </div>
+                    <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                
+                <div class="panel-body">
+                    <!-- Image Contrast slider -->
+                    <div class="control-group filter-slider">
+                        <div class="control-label">
+                            Contrast
+                            <span class="slider-val" id="filter-contrast-val">1.0</span>
+                        </div>
+                        <input type="range" id="filter-contrast" min="0.5" max="2.0" step="0.05" value="1.0">
+                    </div>
+
+                    <!-- Image Brightness slider -->
+                    <div class="control-group filter-slider">
+                        <div class="control-label">
+                            Brightness
+                            <span class="slider-val" id="filter-brightness-val">1.0</span>
+                        </div>
+                        <input type="range" id="filter-brightness" min="0.5" max="2.0" step="0.05" value="1.0">
+                    </div>
+
+                    <!-- Flat-Field Illumination Correction -->
+                    <div class="control-group filter-slider">
+                        <div class="control-label">
+                            Flat-Field Correction
+                            <span class="info-bubble" title="Upload a blank substrate image (same illumination, no flakes) to divide out uneven lighting.">ⓘ</span>
+                        </div>
+                        <div class="flat-field-row">
+                            <input type="file" id="flat-field-input" class="file-input" accept="image/*">
+                            <label for="flat-field-input" class="secondary-btn-sm" style="flex-grow: 1; text-align: center;">
+                                📁 Load Reference
+                            </label>
+                            <span id="flat-field-label" class="flat-field-label">No reference loaded</span>
+                        </div>
+                        <div class="grid-2col" style="margin-top:0.3rem;">
+                            <button id="btn-apply-flat-field" class="cyan-btn-sm">Apply Correction</button>
+                            <button id="btn-flat-field-clear" class="danger-btn-sm" style="display:none;">Clear</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Substrate Inventory Panel -->
+            <div class="panel-card" id="card-inventory" style="flex:1; min-height:0; display:flex; flex-direction:column;">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                            <path d="M2 17l10 5 10-5"></path>
+                        </svg>
+                        Substrate Inventory
+                    </div>
+                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                        <button id="btn-generate-report" class="action-btn-xs" title="Generate comprehensive substrate analytical PDF report">Report</button>
+                        <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </div>
+                </div>
+                <div class="panel-body" style="padding:0; overflow:hidden; display:flex; flex-direction:column; flex:1; min-height:0;">
+                    <div class="flake-search-bar">
+                        <input type="text" id="flake-search-input" placeholder="🔍 Search flakes…" style="flex:1; padding:0.25rem 0.45rem; font-size:0.7rem; border-radius:6px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text-primary);" oninput="filterFlakeList(this.value)">
+                        <select id="flake-sort-select" title="Sort flakes by…" style="font-size:0.68rem; padding:0.2rem 0.3rem; border-radius:6px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text-primary);" onchange="sortFlakeList(this.value)">
+                            <option value="index">Order ↑</option>
+                            <option value="area_desc">Area ↓</option>
+                            <option value="area_asc">Area ↑</option>
+                            <option value="length_desc">Length ↓</option>
+                            <option value="contrast_asc">Contrast ↑</option>
+                            <option value="tag">Tag A-Z</option>
+                        </select>
+                    </div>
+                    <div class="live-stats-bar" id="live-stats-bar">
+                        <div class="live-stat-chip">
+                            <span class="live-stat-val" id="live-stat-count">0</span>
+                            <span class="live-stat-lbl">Flakes</span>
+                        </div>
+                        <div class="live-stat-chip">
+                            <span class="live-stat-val" id="live-stat-area">—</span>
+                            <span class="live-stat-lbl">Avg Area µm<sup>2</sup></span>
+                        </div>
+                        <div class="live-stat-chip">
+                            <span class="live-stat-val" id="live-stat-coverage">—</span>
+                            <span class="live-stat-lbl">Coverage</span>
+                        </div>
+                        <div class="live-stat-chip" style="border-right:none;">
+                            <span class="live-stat-val" id="live-stat-layers">—</span>
+                            <span class="live-stat-lbl">Avg Layers</span>
+                        </div>
+                    </div>
+                    <div id="flakes-list" class="flakes-list" style="flex:1; overflow-y:auto; padding:0.3rem 0.5rem;">
+                        <!-- Flakes listed dynamically here -->
+                    </div>
+                </div>
+            </div>
+
+            </div><!-- /sidebar-content -->
+        </aside>
+
+    </main>
+
+    <!-- Modal: Statistical Dashboard -->
+    <div class="modal-overlay" id="stats-modal">
+        <div class="modal-container" style="max-width:900px; width:96%; max-height:92vh;">
+            <div class="modal-header">
+                <h3 style="font-weight:700; display:flex; align-items:center; gap:0.5rem;">
+                    📊 Statistical Dashboard
+                </h3>
+                <button onclick="document.getElementById('stats-modal').classList.remove('active')" style="font-size:1.25rem;">&times;</button>
+            </div>
+            <div class="modal-body" id="stats-modal-body" style="overflow-y:auto; max-height:calc(92vh - 8rem);">
+                <!-- Injected dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Keyboard Shortcuts -->
+    <div class="modal-overlay" id="shortcuts-modal">
+        <div class="modal-container" style="max-width:520px;">
+            <div class="modal-header">
+                <h3 style="font-weight:700;">⌨️ Keyboard Shortcuts</h3>
+                <button onclick="document.getElementById('shortcuts-modal').classList.remove('active')" style="font-size:1.25rem;">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 1.5rem;">
+                    <div>
+                        <div style="font-size:0.7rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Navigation</div>
+                        <div class="shortcut-row"><span>Pan image</span><span class="key-combo"><span class="key">Space</span>+drag</span></div>
+                        <div class="shortcut-row"><span>Zoom in/out</span><span class="key-combo"><span class="key">Scroll</span></span></div>
+                        <div class="shortcut-row"><span>Reset view</span><span class="key-combo"><span class="key">Ctrl</span><span class="key">0</span></span></div>
+                        <div class="shortcut-row"><span>Pan tool</span><span class="key-combo"><span class="key">V</span></span></div>
+                        <div class="shortcut-row"><span>Scale ruler</span><span class="key-combo"><span class="key">S</span></span></div>
+                        <div class="shortcut-row"><span>Set origin</span><span class="key-combo"><span class="key">O</span></span></div>
+                    </div>
+                    <div>
+                        <div style="font-size:0.7rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem;">Tools</div>
+                        <div class="shortcut-row"><span>Box annotation</span><span class="key-combo"><span class="key">B</span></span></div>
+                        <div class="shortcut-row"><span>Polygon</span><span class="key-combo"><span class="key">P</span></span></div>
+                        <div class="shortcut-row"><span>Flood-fill</span><span class="key-combo"><span class="key">F</span></span></div>
+                        <div class="shortcut-row"><span>Auto-detect</span><span class="key-combo"><span class="key">Ctrl</span><span class="key">D</span></span></div>
+                        <div class="shortcut-row"><span>Undo</span><span class="key-combo"><span class="key">Ctrl</span><span class="key">Z</span></span></div>
+                        <div class="shortcut-row"><span>Redo</span><span class="key-combo"><span class="key">Ctrl</span><span class="key">Y</span></span></div>
+                        <div class="shortcut-row"><span>This panel</span><span class="key-combo"><span class="key">?</span></span></div>
+                        <div class="shortcut-row"><span>Stats dashboard</span><span class="key-combo"><span class="key">Ctrl</span><span class="key">Shift</span><span class="key">S</span></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Position & Dimension Analytics Report -->
+    <div class="modal-overlay" id="report-modal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3 style="font-weight:700;">Substrate Analytical Report</h3>
+                <button onclick="closeReportModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="report-modal-body">
+                <!-- Content injected dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button onclick="exportReportPDF()" class="primary">⬇ Save as PDF</button>
+                <button onclick="exportReportExcel()">⬇ Save as Excel</button>
+                <button onclick="closeReportModal()">Dismiss</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Help — Tools & Parameters ───────────────────────────────── -->
+    <div class="modal-overlay" id="help-modal" onclick="if(event.target===this)this.classList.remove('active')">
+        <div class="modal-container" style="max-width:780px; max-height:88vh;">
+            <div class="modal-header">
+                <h3 style="font-weight:700; display:flex; align-items:center; gap:0.5rem;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    Tools &amp; Parameters Reference
+                </h3>
+                <button onclick="document.getElementById('help-modal').classList.remove('active')" style="font-size:1.25rem;">&times;</button>
+            </div>
+            <div class="modal-body" style="overflow-y:auto; padding:1.2rem 1.5rem;">
+
+                <!-- ── HOW TO RUN ── -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.6rem;">🚀 How to Run</div>
+
+                <div style="margin-bottom:0.55rem;">
+                    <div style="font-size:0.72rem; font-weight:700; color:var(--text-primary); margin-bottom:0.35rem; display:flex; align-items:center; gap:0.4rem;">
+                        <span style="background:var(--primary); color:#fff; font-size:0.6rem; font-weight:700; padding:0.1rem 0.45rem; border-radius:20px; text-transform:uppercase; letter-spacing:0.04em;">Browser App</span>
+                        No installation required
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:0.3rem;">
+                        <div class="run-step"><span class="run-num">1</span><div><b>Open the project folder</b> — navigate to <code class="run-code">Flake Locator Pro/</code></div></div>
+                        <div class="run-step"><span class="run-num">2</span><div><b>Open index.html</b> in any modern browser — Chrome, Firefox, Safari, or Edge.<br><span style="color:var(--text-secondary); font-size:0.68rem;">Double-click the file, or drag it onto a browser window. No server needed.</span></div></div>
+                        <div class="run-step"><span class="run-num">3</span><div><b>Load your images</b> — click <em>Load</em> in the Substrate Library and select one or more microscopy image files (JPEG, PNG, TIFF).</div></div>
+                        <div class="run-step"><span class="run-num">4</span><div><b>Calibrate scale</b> — press <code class="run-code">S</code>, drag across a known scale bar, enter the real-world length in µm, press <em>Set Scale</em>.</div></div>
+                        <div class="run-step"><span class="run-num">5</span><div><b>Detect flakes</b> — press <code class="run-code">Ctrl D</code> for full auto-detect, or press <code class="run-code">F</code> to flood-fill individual flakes by clicking.</div></div>
+                        <div class="run-step"><span class="run-num">6</span><div><b>Apply a colormap</b> (optional) — select a colormap from the toolbar dropdown to colour all flake labels by index.</div></div>
+                        <div class="run-step"><span class="run-num">7</span><div><b>Export results</b> — CSV, Excel, high-res JPG, PDF report, or save a full session Backup.</div></div>
+                    </div>
+                </div>
+
+                <div style="background:var(--bg-inset,var(--input-bg)); border:1px solid var(--border-color); border-radius:7px; padding:0.55rem 0.85rem; margin-bottom:0.6rem; font-size:0.7rem; color:var(--text-secondary); display:flex; gap:1.2rem; flex-wrap:wrap;">
+                    <span>✅ <b>Chrome</b> / Chromium — recommended</span>
+                    <span>✅ <b>Firefox</b> — fully supported</span>
+                    <span>✅ <b>Safari</b> 16+ — supported</span>
+                    <span>✅ <b>Edge</b> — supported</span>
+                    <span>⚠️ <b>IE / old Edge</b> — not supported</span>
+                </div>
+
+                <div style="background:var(--bg-inset,var(--input-bg)); border:1px solid var(--border-color); border-radius:7px; padding:0.55rem 0.85rem; margin-bottom:1.3rem;">
+                    <div style="font-size:0.7rem; font-weight:700; color:var(--text-primary); margin-bottom:0.25rem;">⚡ Optional — run via local server (avoids browser file-access restrictions)</div>
+                    <div style="font-family:var(--font-mono,monospace); font-size:0.7rem; color:var(--primary); line-height:2;">
+                        # Python 3<br>
+                        cd "Flake Locator Pro"<br>
+                        python -m http.server 8123<br>
+                        <span style="color:var(--text-secondary);"># then open → http://localhost:8123</span>
+                    </div>
+                </div>
+
+                <!-- Python CLI -->
+                <div style="margin-bottom:1.3rem;">
+                    <div style="font-size:0.72rem; font-weight:700; color:var(--text-primary); margin-bottom:0.35rem; display:flex; align-items:center; gap:0.4rem;">
+                        <span style="background:#7c3aed; color:#fff; font-size:0.6rem; font-weight:700; padding:0.1rem 0.45rem; border-radius:20px; text-transform:uppercase; letter-spacing:0.04em;">Python CLI</span>
+                        Batch processing via terminal
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:0.3rem;">
+                        <div class="run-step"><span class="run-num">1</span><div><b>Install dependencies</b><br><code class="run-code">pip install -r requirements.txt</code></div></div>
+                        <div class="run-step"><span class="run-num">2</span><div><b>Run on a single image</b><br><code class="run-code">python flake_analyzer.py IMG_0327.jpeg --scale 1.5 --threshold 120</code></div></div>
+                        <div class="run-step"><span class="run-num">3</span><div><b>Run with GMM background model</b><br><code class="run-code">python flake_analyzer.py IMG_0327.jpeg --method gmm --scale 1.5</code></div></div>
+                        <div class="run-step"><span class="run-num">4</span><div><b>Batch process a folder</b><br><code class="run-code">for f in *.jpeg; do python flake_analyzer.py "$f" --scale 1.5; done</code></div></div>
+                        <div class="run-step"><span class="run-num">5</span><div><b>Output</b> — a <code class="run-code">.csv</code> file per image with flake coordinates, dimensions, and contrast values.</div></div>
+                    </div>
+                </div>
+
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.45rem;">CLI Flags — flake_analyzer.py</div>
+                <table class="help-table" style="margin-bottom:1.4rem;">
+                    <thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>--method</code></td><td>threshold</td><td><code>threshold</code> · <code>colorDist</code> · <code>gmm</code> — detection algorithm</td></tr>
+                        <tr><td><code>--threshold</code></td><td>128</td><td>Grayscale cut-off (0–255) for threshold mode</td></tr>
+                        <tr><td><code>--min-size</code></td><td>100</td><td>Minimum blob area in pixels; smaller blobs discarded</td></tr>
+                        <tr><td><code>--scale</code></td><td>1.0</td><td>Calibration: pixels per µm (px/µm)</td></tr>
+                        <tr><td><code>--color-mode</code></td><td>grayscale</td><td><code>grayscale</code> or <code>colorDist</code> — pixel comparison strategy</td></tr>
+                        <tr><td><code>--output</code></td><td>auto</td><td>Output CSV filename (default: <code>&lt;image&gt;_flakes.csv</code>)</td></tr>
+                    </tbody>
+                </table>
+
+                <!-- ── DRAWING TOOLS ── -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.6rem;">Drawing &amp; Annotation Tools</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.65rem 1.5rem; margin-bottom:1.4rem;">
+
+                    <div class="help-card">
+                        <div class="help-card-title">🖐 Pan &amp; Select <span class="help-key">V</span></div>
+                        <div class="help-card-body">Navigate the canvas. Click a flake to select it and zoom to it; drag to pan. Scroll to zoom. Hold <b>Space</b> + drag to pan from any other tool.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">📏 Scale Ruler <span class="help-key">S</span></div>
+                        <div class="help-card-body">Drag across a known scale bar to calibrate. Enter the real-world length in µm, then press Set. Establishes the <b>px/µm</b> ratio used for all subsequent measurements.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">⊕ Set Origin <span class="help-key">O</span></div>
+                        <div class="help-card-body">Click to place the coordinate origin (0, 0). All flake X/Y positions are reported relative to this point. Origin is shown as a permanent crosshair overlay on the canvas.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">▭ Box Annotation <span class="help-key">B</span></div>
+                        <div class="help-card-body">Click and drag to draw an axis-aligned bounding box over a flake. Reports length, width, area, centroid coordinates, and aspect ratio.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">◱ Rotated Box <span class="help-key">R</span></div>
+                        <div class="help-card-body">3-click rotated rectangle: click p1 → p2 along the long axis edge, then p3 to define the width. Captures orientation angle and oriented bounding-box (OBB) dimensions.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">⬡ Polygon <span class="help-key">P</span></div>
+                        <div class="help-card-body">Click to place vertices around a flake outline; double-click or click near the start node to close. Area computed via shoelace formula, centroid via shape moments, L/W via minimum OBB.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">🪣 Flood Fill <span class="help-key">F</span></div>
+                        <div class="help-card-body">Click a seed pixel inside a flake. Expands to neighbouring pixels within the <b>Tolerance</b> of the seed colour. Traces a Douglas–Peucker boundary polygon; auto-classifies layer thickness via Fresnel optical contrast.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">🔍 Auto-Detect <span class="help-key">Ctrl D</span></div>
+                        <div class="help-card-body">Scans the entire image. Thresholds by grayscale value or colour distance, discards blobs below <b>Min Size</b>, skips the bottom banner and any drawn Ignore Areas, and optionally applies watershed split and morphological cleanup before adding all found flakes.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">⬚ Ignore Area</div>
+                        <div class="help-card-body">Drag a rectangle to mark a region that should be excluded from auto-detect and flood fill — useful for the scale bar, contamination, or substrate edges. Shown as a red dashed border; can be removed individually.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">✂ Snip Crop</div>
+                        <div class="help-card-body">Drag to select a rectangular region of the canvas. Exports that region as a cropped JPG, useful for producing publication-ready sub-images of individual flakes of interest.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">🗂 Crop Image</div>
+                        <div class="help-card-body">Permanently trims the active substrate image to the drawn rectangle. All flake coordinates are automatically adjusted to remain correct relative to the new image bounds.</div>
+                    </div>
+
+                    <div class="help-card">
+                        <div class="help-card-title">🔗 Stitch Align</div>
+                        <div class="help-card-body">Drag images to position them side-by-side. <b>Auto-Stitch</b> detects Harris corners, matches patch descriptors, and uses RANSAC to compute the 2D alignment offset — works for any overlap direction (horizontal, vertical, diagonal). Falls back to sequential tiling if no overlap is detected.</div>
+                    </div>
+                </div>
+
+                <!-- ── COLORMAP SYSTEM ── -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.6rem;">🎨 Flake Label Colormap</div>
+                <div style="background:var(--bg-inset,var(--input-bg)); border:1px solid var(--border-color); border-radius:8px; padding:0.75rem 0.9rem; margin-bottom:0.6rem; font-size:0.72rem; color:var(--text-secondary); line-height:1.65;">
+                    Select a colormap from the <b>Colormap… dropdown</b> in the canvas toolbar to colour all flake annotations by their index across the full colormap range. 39 scientific colormaps are available — perceptually uniform, diverging, sequential, and cyclic. Each flake receives three distinct hues sampled at evenly-spaced offsets within the colormap:
+                </div>
+                <table class="help-table" style="margin-bottom:0.6rem;">
+                    <thead><tr><th>Canvas element</th><th>Colormap offset</th></tr></thead>
+                    <tbody>
+                        <tr><td>Outline · centroid cross · flake number label</td><td><code>t</code> — base colour for flake <em>i</em></td></tr>
+                        <tr><td>L × W dimension string (below name)</td><td><code>t + 0.33</code></td></tr>
+                        <tr><td>Length arm line &amp; label · Width arm line &amp; label</td><td><code>t + 0.67</code></td></tr>
+                    </tbody>
+                </table>
+                <div style="font-size:0.7rem; color:var(--text-secondary); margin-bottom:1.4rem;">Where <code>t = i / (n − 1)</code>, <em>i</em> = zero-based flake index, <em>n</em> = total flakes. Colormaps available: Magma · Inferno · Plasma · Viridis · Turbo · Jet · HSV · Rainbow · Hot · Cool · Cool-Warm · Blue-White-Red · Red-White-Blue · Grayscale · Spectrum · Terrain · Copper · Bone · Autumn · Winter · Spring · Summer · Ocean · Gist Earth · Gnuplot · Gnuplot2 · Cividis · Twilight · Twilight Shifted · Black-Body Radiation · Seismic · RdBu · RdYlBu · RdYlGn · Spectral · PiYG · PRGn · BrBG · PuOr.</div>
+
+                <!-- ── DETECTION PARAMS ── -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.6rem;">Detection Parameters</div>
+                <table class="help-table" style="margin-bottom:1.4rem;">
+                    <thead><tr><th>Parameter</th><th>Range</th><th>What it does</th></tr></thead>
+                    <tbody>
+                        <tr><td><b>Grayscale Threshold</b></td><td>0 – 255</td><td>Pixels darker than this value are treated as potential flake pixels (dark-on-light substrate). Lower values detect fainter flakes but increase false positives.</td></tr>
+                        <tr><td><b>Flood-Fill Tolerance</b></td><td>1 – 255</td><td>Maximum luminance or RGB distance from seed pixel during flood fill. Higher values produce larger fill regions. Set to 255 for whole-flake fills.</td></tr>
+                        <tr><td><b>Min Flake Size</b></td><td>10 – 1000 px</td><td>Minimum blob area in pixels. Blobs below this threshold are discarded as noise or contamination.</td></tr>
+                        <tr><td><b>Color Distance</b></td><td>5 – 120</td><td>RGB Euclidean distance from the background colour. Active only in <em>Color Distance</em> mode. More robust on coloured substrates.</td></tr>
+                        <tr><td><b>Contrast</b></td><td>0.5 – 2.0×</td><td>Visual display contrast multiplier applied before rendering. Does not alter stored measurements or detection.</td></tr>
+                        <tr><td><b>Brightness</b></td><td>0.5 – 2.0×</td><td>Visual display brightness offset. Does not alter stored measurements or detection.</td></tr>
+                        <tr><td><b>Erosion Radius</b></td><td>1 – 6 px</td><td>Morphological erosion kernel size when <em>Morph Cleanup</em> is enabled. Larger values remove more noise but may erode thin or narrow flakes.</td></tr>
+                        <tr><td><b>Watershed Split</b></td><td>on / off</td><td>Attempts to separate merged or overlapping blobs by erosion-flood analysis before the final boundary trace.</td></tr>
+                        <tr><td><b>Morph Cleanup</b></td><td>on / off</td><td>Applies morphological erosion before auto-detection to suppress small noise clusters and isolated pixels.</td></tr>
+                    </tbody>
+                </table>
+
+                <!-- ── LAYER CLASSIFICATION ── -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.6rem;">Layer Thickness Classification (Fresnel Optical Contrast)</div>
+                <div style="font-size:0.7rem; color:var(--text-secondary); margin-bottom:0.5rem;">Relative contrast = |L<sub>flake</sub> − L<sub>substrate</sub>| / L<sub>substrate</sub>. Thresholds calibrated for graphene on 300 nm SiO₂/Si (Blake et al., APL 2007; Nair et al., Science 2008).</div>
+                <table class="help-table" style="margin-bottom:0.5rem;">
+                    <thead><tr><th>Tag</th><th>Rel. Contrast</th><th>Default colour</th></tr></thead>
+                    <tbody>
+                        <tr><td>Monolayer (1L)</td><td>&lt; 0.030</td><td style="color:#06b6d4;">■ Cyan</td></tr>
+                        <tr><td>Bilayer (2L)</td><td>0.030 – 0.065</td><td style="color:#22d3ee;">■ Light Cyan</td></tr>
+                        <tr><td>Few-Layer (3–5L)</td><td>0.065 – 0.140</td><td style="color:#10b981;">■ Green</td></tr>
+                        <tr><td>Thick / Bulk</td><td>&gt; 0.140</td><td style="color:#f59e0b;">■ Amber</td></tr>
+                    </tbody>
+                </table>
+                <div style="font-size:0.68rem; color:var(--text-secondary); margin-bottom:1.4rem;">⚠ Classification accuracy depends on correct scale calibration and background colour estimation. Results for materials other than graphene or substrates other than 300 nm SiO₂/Si should be validated experimentally.</div>
+
+                <!-- ── EXPORTS ── -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.6rem;">Exports</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem 1.5rem;">
+                    <div class="help-card"><div class="help-card-title">📄 CSV</div><div class="help-card-body">Per-flake table: ID, X/Y µm, L, W, Aspect Ratio, Area (µm²), Orientation, Layers, Contrast, Tag, Notes. One row per flake, ready for analysis in Python, MATLAB, or Excel.</div></div>
+                    <div class="help-card"><div class="help-card-title">📊 Excel (.xlsx)</div><div class="help-card-body">Two sheets — <em>Summary</em> (aggregate stats + per-layer breakdown) and <em>Flake Data</em> (full inventory with frozen header row and formatted columns).</div></div>
+                    <div class="help-card">
+                        <div class="help-card-title">🖼 JPG Export</div>
+                        <div class="help-card-body">
+                            Exports a high-resolution composite image. Options shown at export time:
+                            <br>• <b>Include overlays</b> — bounding boxes, labels, crosshairs, origin
+                            <br>• <b>Scale factor</b> — 1× (native), 2× (default), 3×, or 4× for publication-quality output
+                            <br>JPEG quality is set to maximum (1.0 — no compression artefacts). A white background is applied. Output filename includes the scale factor.
+                        </div>
+                    </div>
+                    <div class="help-card"><div class="help-card-title">🖨 PDF Report</div><div class="help-card-body">Print-ready analytical report. Summary metrics, per-layer statistics table, and full flake inventory. Open the Report modal and use your browser's Print → Save as PDF to produce the file.</div></div>
+                    <div class="help-card"><div class="help-card-title">💾 Backup / Restore</div><div class="help-card-body">Full session JSON — substrate images (base64-encoded), all flake annotations, calibration values, filter settings, ignore areas, and grid layout. Restores the entire session including images on any device.</div></div>
+                    <div class="help-card"><div class="help-card-title">🎯 Stage Coordinates</div><div class="help-card-body">Exports flake centroid coordinates as motorised stage visit scripts. Sort order options: raster, centroid-sorted, or spiral scan. For use with automated microscope stage controllers.</div></div>
+                    <div class="help-card"><div class="help-card-title">📈 Stats Dashboard</div><div class="help-card-body">4-tab interactive chart suite: size distributions, spatial heat maps, correlation matrix, and cross-image comparison. Individual charts can be exported as PNG images.</div></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: About ─────────────────────────────────────────────────────── -->
+    <div class="modal-overlay" id="about-modal" onclick="if(event.target===this)this.classList.remove('active')">
+        <div class="modal-container" style="max-width:420px; text-align:center;">
+            <div class="modal-header" style="border-bottom:none; padding-bottom:0;">
+                <h3 style="font-weight:700; width:100%; text-align:center; padding-top:0.5rem;">
+                    About FlakeLocator Pro
+                </h3>
+                <button onclick="document.getElementById('about-modal').classList.remove('active')" style="font-size:1.25rem; position:absolute; right:1.2rem; top:1rem;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:1rem 2rem 2rem; display:flex; flex-direction:column; align-items:center; gap:1rem;">
+
+                <!-- Logo / Icon -->
+                <div style="width:72px; height:72px; border-radius:18px; background:linear-gradient(135deg,var(--primary),var(--accent)); display:flex; align-items:center; justify-content:center; font-size:2.2rem; box-shadow:0 4px 20px rgba(16,185,129,0.35);">
+                    🔬
+                </div>
+
+                <div>
+                    <div style="font-size:1.35rem; font-weight:800; color:var(--text-primary); letter-spacing:-0.02em;">FlakeLocator Pro</div>
+                    <div style="font-size:0.78rem; color:var(--secondary); margin-top:0.2rem;">2D Material Flake Analysis Suite</div>
+                    <div style="display:inline-block; margin-top:0.5rem; background:var(--primary); color:#fff; font-size:0.7rem; font-weight:700; padding:0.2rem 0.65rem; border-radius:20px; letter-spacing:0.04em;">v 1.3.0</div>
+                </div>
+
+                <div style="width:100%; height:1px; background:var(--border-color);"></div>
+
+                <div style="font-size:0.82rem; color:var(--text-secondary); line-height:1.7;">
+                    <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.5rem;">Concepted and Developed by</div>
+                    <div style="font-weight:700; color:var(--text-primary); font-size:0.92rem;">Tarun Kumar</div>
+                    <div style="font-weight:700; color:var(--text-primary); font-size:0.92rem;">Krishna Kumar Godara</div>
+                </div>
+
+                <div style="width:100%; height:1px; background:var(--border-color);"></div>
+
+                <div style="font-size:0.76rem; color:var(--text-secondary); line-height:1.8;">
+                    <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.4rem;">Built with the help of</div>
+                    <div style="display:flex; justify-content:center; gap:0.75rem; flex-wrap:wrap;">
+                        <span style="background:var(--input-bg); border:1px solid var(--border-color); padding:0.2rem 0.7rem; border-radius:20px; font-size:0.72rem; font-weight:600;">Claude Code</span>
+                        <span style="background:var(--input-bg); border:1px solid var(--border-color); padding:0.2rem 0.7rem; border-radius:20px; font-size:0.72rem; font-weight:600;">Google Antigravity</span>
+                    </div>
+                </div>
+
+                <div style="width:100%; height:1px; background:var(--border-color);"></div>
+
+                <div style="font-size:0.7rem; color:var(--text-secondary); opacity:0.7; line-height:1.6;">
+                    Browser-based · No data leaves your device<br>
+                    HTML5 Canvas · Pure JavaScript · Zero dependencies
+                </div>
+
+                <div style="width:100%; height:1px; background:var(--border-color);"></div>
+
+                <!-- Disclaimer -->
+                <div style="background:var(--bg-inset,var(--input-bg)); border:1px solid var(--border-color); border-radius:8px; padding:0.75rem 0.9rem; text-align:left; width:100%;">
+                    <div style="font-size:0.65rem; font-weight:800; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.45rem;">⚠ Disclaimer</div>
+                    <div style="font-size:0.67rem; color:var(--text-secondary); line-height:1.65;">
+                        <b style="color:var(--text-primary);">For research use only.</b> FlakeLocator Pro is an experimental research tool and is provided <em>as-is</em> without warranty of any kind, express or implied.<br><br>
+                        <b style="color:var(--text-primary);">Measurement accuracy</b> depends entirely on correct scale calibration (px/µm). Incorrect calibration will produce incorrect dimensional and area values.<br><br>
+                        <b style="color:var(--text-primary);">Layer classification</b> (Monolayer, Bilayer, Few-Layer) is based on Fresnel optical contrast models calibrated for <em>graphene on 300 nm SiO₂/Si</em> substrates (Blake et al., APL 2007). Results for other materials, substrates, or illumination conditions may be inaccurate and should be validated experimentally before use in publications.<br><br>
+                        <b style="color:var(--text-primary);">Privacy.</b> All image processing runs locally in your browser. No image data, measurements, or session files are transmitted to any server.<br><br>
+                        If you use this tool in academic work, please acknowledge the software and cite the underlying optical contrast references appropriately.
+                    </div>
+                </div>
+
+                <button onclick="document.getElementById('about-modal').classList.remove('active')" class="primary-btn" style="margin-top:0.25rem; padding:0.45rem 2rem;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Project Files & Code Structure ───────────────────────────── -->
+    <div class="modal-overlay" id="files-modal" onclick="if(event.target===this)this.classList.remove('active')">
+        <div class="modal-container" style="max-width:680px; max-height:88vh;">
+            <div class="modal-header">
+                <h3 style="font-weight:700; display:flex; align-items:center; gap:0.5rem;">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    Project Files &amp; Code Structure
+                </h3>
+                <button onclick="document.getElementById('files-modal').classList.remove('active')" style="font-size:1.25rem;">&times;</button>
+            </div>
+            <div class="modal-body" style="overflow-y:auto; padding:1.2rem 1.5rem;">
+
+                <!-- Directory -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.6rem;">📁 Project Directory</div>
+                <div class="files-dir-box" style="margin-bottom:1.3rem;">
+                    <span class="files-path">Flake Locator Pro/</span>
+                    <div class="files-tree">
+                        <div class="files-tree-row">
+                            <span class="files-icon">📄</span>
+                            <span class="files-name">index.html</span>
+                            <span class="files-size">95 KB</span>
+                            <span class="files-lines">1 224 lines</span>
+                            <span class="files-desc">App shell — layout, all modals, toolbar, UI markup</span>
+                        </div>
+                        <div class="files-tree-row">
+                            <span class="files-icon">⚙️</span>
+                            <span class="files-name">app.js</span>
+                            <span class="files-size">294 KB</span>
+                            <span class="files-lines">7 275 lines</span>
+                            <span class="files-desc">Core logic — canvas engine, detection, colormaps, exports</span>
+                        </div>
+                        <div class="files-tree-row">
+                            <span class="files-icon">🎨</span>
+                            <span class="files-name">style.css</span>
+                            <span class="files-size">62 KB</span>
+                            <span class="files-lines">2 663 lines</span>
+                            <span class="files-desc">Full UI theme — dark/light modes, all components</span>
+                        </div>
+                        <div class="files-tree-row">
+                            <span class="files-icon">🐍</span>
+                            <span class="files-name">flake_analyzer.py</span>
+                            <span class="files-size">18 KB</span>
+                            <span class="files-lines">425 lines</span>
+                            <span class="files-desc">CLI batch analyzer — OpenCV + GMM detection</span>
+                        </div>
+                        <div class="files-tree-row">
+                            <span class="files-icon">📋</span>
+                            <span class="files-name">requirements.txt</span>
+                            <span class="files-size">134 B</span>
+                            <span class="files-lines">4 lines</span>
+                            <span class="files-desc">Python dependencies (numpy, opencv, pandas, scikit-learn)</span>
+                        </div>
+                        <div class="files-tree-row" style="opacity:0.55;">
+                            <span class="files-icon">🖼</span>
+                            <span class="files-name">IMG_0327.jpeg</span>
+                            <span class="files-size">1.1 MB</span>
+                            <span class="files-lines">—</span>
+                            <span class="files-desc">Default workspace substrate image</span>
+                        </div>
+                    </div>
+                    <div style="margin-top:0.55rem; font-size:0.68rem; color:var(--secondary); font-family:var(--font-mono,monospace);">Total: ~11 587 lines of code &nbsp;·&nbsp; 5 source files &nbsp;·&nbsp; ~469 KB</div>
+                </div>
+
+                <!-- app.js sections -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.6rem;">⚙️ app.js — Module Breakdown</div>
+                <table class="help-table" style="margin-bottom:1.3rem;">
+                    <thead><tr><th>Section</th><th>Lines (approx)</th><th>Responsibility</th></tr></thead>
+                    <tbody>
+                        <tr><td>State &amp; Init</td><td>1 – 240</td><td>Global state object, canvas setup, DOMContentLoaded bootstrap</td></tr>
+                        <tr><td>Image Loading</td><td>250 – 405</td><td>preloadAllImages, setupDefaultImage, mock substrate generator</td></tr>
+                        <tr><td>Viewport &amp; Coord</td><td>405 – 530</td><td>loadImage, resetViewport, screenToPixel, pixelToPhysical transforms</td></tr>
+                        <tr><td>Event Listeners</td><td>530 – 760</td><td>Mouse, keyboard, scroll, tool switching, drag handlers</td></tr>
+                        <tr><td>Drawing Tools</td><td>760 – 1 460</td><td>Box, rotated box, polygon, scale ruler, origin, crop, snip, ignore area</td></tr>
+                        <tr><td>Flood Fill</td><td>1 460 – 2 000</td><td>BFS seed fill, Douglas–Peucker boundary, shape moments, OBB</td></tr>
+                        <tr><td>Auto Detection</td><td>2 000 – 2 550</td><td>Full-image scan, watershed split, morphological cleanup, progress bar</td></tr>
+                        <tr><td>Layer Classification</td><td>2 550 – 2 680</td><td>Fresnel contrast model — Monolayer / Bilayer / Few-Layer / Bulk tags</td></tr>
+                        <tr><td>Rendering Engine</td><td>2 680 – 2 900</td><td>redraw, per-flake draw (outline, OBB, crosshairs, arm labels, name labels), overlap resolver, ignore-area overlay, origin marker</td></tr>
+                        <tr><td>Flake List UI</td><td>2 900 – 3 300</td><td>renderFlakes, flake cards, search / filter / sort, live stats bar, tag select, name edit, notes</td></tr>
+                        <tr><td>Colormap System</td><td>3 300 – 3 450</td><td>COLORMAPS data (39 maps), _sampleColormap interpolation, applyColormap — assigns flake.color / flake.dimColor / flake.armColor per flake</td></tr>
+                        <tr><td>Substrate List</td><td>3 450 – 3 750</td><td>renderSubstrateList, matrix grid layout, auto-stitch (Harris + RANSAC)</td></tr>
+                        <tr><td>Data Exports</td><td>3 750 – 4 100</td><td>CSV, JSON backup v2, high-res JPG (scale × quality 1.0), PDF report, Excel (.xlsx via SheetJS)</td></tr>
+                        <tr><td>Undo / History</td><td>4 100 – 4 250</td><td>pushToUndoStack, undo, redo, restoreHistoryState</td></tr>
+                        <tr><td>Theme &amp; UI Utils</td><td>4 250 – 4 400</td><td>toggleTheme, showToast, showKeyboardShortcuts, updateLiveStats, sidebar collapse</td></tr>
+                        <tr><td>Stats Dashboard</td><td>4 400 – 5 500</td><td>4-tab chart suite: distributions, spatial heatmap, Pearson correlation matrix, cross-image comparison. Per-chart PNG export.</td></tr>
+                        <tr><td>Chart Primitives</td><td>5 500 – 6 200</td><td>Histogram, pie, scatter, heatmap canvas renderer, CDF, g(r), power-law MLE fit, NND</td></tr>
+                        <tr><td>Stage Export</td><td>6 200 – 6 400</td><td>Raster / centroid-sorted / spiral scan motorised-stage coordinate scripts</td></tr>
+                        <tr><td>Flat-Field &amp; Filters</td><td>6 400 – 6 700</td><td>Flat-field illumination correction, contrast/brightness pixel pipeline, binary mask visualisation</td></tr>
+                        <tr><td>Globals &amp; Bootstrap</td><td>6 700 – 7 275</td><td>window.* exports, event wiring, keyboard shortcut map, final DOMContentLoaded init</td></tr>
+                    </tbody>
+                </table>
+
+                <!-- flake_analyzer.py -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.6rem;">🐍 flake_analyzer.py — CLI Tool</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.55rem 1.2rem; margin-bottom:1.3rem;">
+                    <div class="help-card">
+                        <div class="help-card-title">Usage</div>
+                        <div class="help-card-body" style="font-family:var(--font-mono,monospace); font-size:0.68rem; color:var(--primary);">python flake_analyzer.py &lt;image&gt; [options]</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-card-title">--method</div>
+                        <div class="help-card-body"><b>threshold</b> (default), <b>colorDist</b>, <b>gmm</b> (Gaussian Mixture Model background subtraction)</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-card-title">--threshold</div>
+                        <div class="help-card-body">Grayscale cut-off value (0–255). Default: 128.</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-card-title">--min-size</div>
+                        <div class="help-card-body">Minimum blob area in pixels. Default: 100.</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-card-title">--scale</div>
+                        <div class="help-card-body">Pixels per µm calibration factor. Default: 1.0.</div>
+                    </div>
+                    <div class="help-card">
+                        <div class="help-card-title">Output</div>
+                        <div class="help-card-body">CSV with X/Y µm, L, W, Area (µm²), Orientation, Contrast per flake.</div>
+                    </div>
+                </div>
+
+                <!-- requirements -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin-bottom:0.5rem;">📋 Python Dependencies (requirements.txt)</div>
+                <div style="background:var(--bg-inset,var(--input-bg)); border:1px solid var(--border-color); border-radius:8px; padding:0.7rem 1rem; font-family:var(--font-mono,monospace); font-size:0.72rem; line-height:1.9; color:var(--primary);">
+                    numpy &gt;= 1.22.0<br>
+                    opencv-python &gt;= 4.6.0<br>
+                    pandas &gt;= 1.4.0<br>
+                    <span style="color:var(--text-secondary);"># required for --method gmm:</span><br>
+                    scikit-learn &gt;= 1.2.0
+                </div>
+                <div style="margin-top:0.5rem; font-size:0.7rem; color:var(--text-secondary);">Install: <code style="background:var(--bg-inset,var(--input-bg)); padding:0.1rem 0.4rem; border-radius:4px; font-family:var(--font-mono,monospace);">pip install -r requirements.txt</code></div>
+
+                <!-- ── ALGORITHMS ── -->
+                <div style="font-size:0.68rem; font-weight:700; color:var(--secondary); text-transform:uppercase; letter-spacing:0.07em; margin:1.3rem 0 0.6rem;">🧮 Algorithms Used</div>
+                <div style="display:flex; flex-direction:column; gap:0.4rem;">
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Detection</div>
+                        <div class="algo-name">Flood Fill — BFS (Breadth-First Search)</div>
+                        <div class="algo-desc">Starts at a seed pixel clicked by the user. A FIFO queue expands to all 4-connected neighbours whose colour distance from the seed is within <em>Tolerance</em>. Runs in O(n) where n = region pixel count. Used for single-click flake segmentation.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Detection</div>
+                        <div class="algo-name">Global Threshold Scan</div>
+                        <div class="algo-desc">Sweeps every pixel in a 3 px grid. Pixels darker than <em>Threshold</em> (grayscale) or beyond <em>Color Distance</em> from the sampled background are marked as flake candidates. Connected components are then extracted via BFS. Used for Auto-Detect.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Detection</div>
+                        <div class="algo-name">GMM — Gaussian Mixture Model (Python CLI)</div>
+                        <div class="algo-desc">Fits a two-component GMM to the pixel intensity distribution using Expectation-Maximisation (EM). The component with higher mean is treated as the substrate background; pixels assigned to the lower-mean component are flake candidates. More robust than a fixed threshold on non-uniform substrates.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Geometry</div>
+                        <div class="algo-name">Douglas–Peucker Polyline Simplification</div>
+                        <div class="algo-desc">Recursively removes vertices from a boundary polygon that deviate less than ε from the line between their neighbours. Reduces flood-fill boundary point count by ~90% while preserving flake shape. Runs in O(n log n) average case.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Geometry</div>
+                        <div class="algo-name">Image Moments &amp; Centroid</div>
+                        <div class="algo-desc">Computes raw moments M₀₀, M₁₀, M₀₁ over the pixel set to find the centroid (x̄ = M₁₀/M₀₀, ȳ = M₀₁/M₀₀). Central moments μ₂₀, μ₀₂, μ₁₁ give the inertia tensor. Used for all polygon and flood-fill flakes.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Geometry</div>
+                        <div class="algo-name">PCA Oriented Bounding Box (OBB)</div>
+                        <div class="algo-desc">Diagonalises the 2×2 inertia tensor from image moments via eigendecomposition. The principal eigenvector gives the major axis angle θ. Points are rotated by −θ, axis-aligned bounding box computed, then rotated back — yielding the minimum-area OBB. Gives Length, Width, Orientation for every flake.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Geometry</div>
+                        <div class="algo-name">Shoelace Formula (Polygon Area)</div>
+                        <div class="algo-desc">Computes signed area of an arbitrary polygon from its vertex list: A = ½|Σ(xᵢyᵢ₊₁ − xᵢ₊₁yᵢ)|. Exact, O(n), used for manually drawn polygon flakes.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Morphology</div>
+                        <div class="algo-name">Erosion + Watershed Split</div>
+                        <div class="algo-desc">When two touching flakes produce one large blob, binary erosion (shrinks blobs by <em>Erosion Radius</em>) separates them. Each surviving seed is then re-expanded via BFS flood fill, splitting the original blob into individual flakes. Classic marker-based watershed.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Optics</div>
+                        <div class="algo-name">Fresnel Contrast / Michelson Contrast</div>
+                        <div class="algo-desc">Relative contrast C = |L_flake − L_substrate| / L_substrate where L is luminance (Rec. 601 weighted). Calibrated against Blake et al. (2007) APL 91 for graphene on 300 nm SiO₂/Si: 1L ↔ C &lt; 0.030, 2L ↔ 0.030–0.065, 3–5L ↔ 0.065–0.140, Bulk &gt; 0.140. Enables automatic layer counting from a plain optical image.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Statistics</div>
+                        <div class="algo-name">MLE Power Law Fit</div>
+                        <div class="algo-desc">Maximum-likelihood estimate for the exponent of a discrete power law: α = 1 + n / Σ ln(xᵢ / x_min). More accurate than least-squares log-log regression. Used in Stats Dashboard to characterise the flake area size distribution.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Statistics</div>
+                        <div class="algo-name">Pair Correlation Function g(r)</div>
+                        <div class="algo-desc">Counts all pairwise inter-centroid distances, bins them into annuli of width Δr. Each bin is normalised by the expected count for a completely random (Poisson) point process: g(r) = n(r) / (λ · 2πr·Δr), where λ is flake density. g(r) &gt; 1 → clustering, g(r) &lt; 1 → spatial repulsion.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Statistics</div>
+                        <div class="algo-name">Nearest-Neighbour Distance (NND) Histogram</div>
+                        <div class="algo-desc">For each flake centroid, finds the closest other centroid using an O(n²) exhaustive search (n is typically small). Histogram of these distances characterises flake spatial regularity. Compared to the theoretical Rayleigh distribution for a random process.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Statistics</div>
+                        <div class="algo-name">Pearson Correlation Matrix</div>
+                        <div class="algo-desc">Computes all pairwise Pearson r coefficients among 5 flake metrics (Area, Length, Width, Aspect Ratio, Contrast): r = Σ(xᵢ−x̄)(yᵢ−ȳ) / √[Σ(xᵢ−x̄)²·Σ(yᵢ−ȳ)²]. Visualised as a 5×5 colour heatmap. Reveals which physical quantities co-vary.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Alignment</div>
+                        <div class="algo-name">Harris + Patch Descriptor + RANSAC (Image Stitch)</div>
+                        <div class="algo-desc">Images are downsampled to ≤600px wide to bound memory use. Sobel gradients → structure tensor (box-smoothed) → Harris response R = det(M)−k·tr(M)². Top-250 corners kept after non-maximum suppression. Each corner gets an 11×11 zero-mean-normalised patch descriptor. Mutual nearest-neighbour matching with Lowe's ratio test (threshold 0.75) produces candidate correspondences. RANSAC (each match as a 1-point translation hypothesis) finds the inlier-maximising (dx, dy). Offsets are scaled back to full resolution. Graph-based greedy placement handles more than 2 images in any arrangement.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Coord</div>
+                        <div class="algo-name">Affine Screen ↔ World Transform</div>
+                        <div class="algo-desc">All canvas interactions use a two-level affine transform: Screen → Image pixel via (x − pan) / zoom, then Image pixel → Physical µm via (pixel − origin) / scaleRatio with optional Y-axis inversion for Cartesian convention. Inverse path used for rendering.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Colour</div>
+                        <div class="algo-name">Scientific Colormap Interpolation (39 maps)</div>
+                        <div class="algo-desc">Each colormap is stored as an array of 5–12 [R, G, B] control points sampled at equal spacing across [0, 1]. Given a normalised value t, the surrounding pair of stops is found via floor(t·(n−1)) and a linear blend applied channel-wise. For each flake at index i, three t-values are derived (t, t+0.33, t+0.67 mod 1) to assign distinct hues to the outline, the L×W dimension string, and the crosshair arm labels. Maps include perceptually uniform (Viridis, Plasma, Magma, Inferno, Cividis), diverging (RdBu, Seismic, BrBG, etc.), cyclic (HSV, Twilight), and legacy (Jet, Rainbow, Hot, Cool) colormaps.</div>
+                    </div>
+
+                    <div class="algo-row">
+                        <div class="algo-tag">Export</div>
+                        <div class="algo-name">High-Resolution JPG Composite Export</div>
+                        <div class="algo-desc">An off-screen canvas is created at exportWidth × exportHeight × SCALE pixels (SCALE ∈ {1, 2, 3, 4}, default 2). A white fill prevents the JPEG black-background artefact. All substrate images are drawn via ctx.scale(SCALE, SCALE) so the native image pixels upscale without interpolation loss. Flake overlays (outlines, labels, crosshairs) are re-rendered at the same scale. The canvas is serialised with toDataURL('image/jpeg', 1.0) — quality 1.0 is the JPEG maximum, producing near-lossless output. A 2× export of a 3 MP substrate yields a ~12 MP file.</div>
+                    </div>
+
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Scale Bar Verification ──────────────────────────────────────── -->
+    <div class="modal-overlay" id="scalebar-modal" onclick="if(event.target===this)closeScaleBarModal()">
+        <div class="modal-container" style="max-width:580px; width:96%;">
+            <div class="modal-header">
+                <h3 style="font-weight:700; display:flex; align-items:center; gap:0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="7" x2="19" y2="7"/><line x1="5" y1="17" x2="19" y2="17"/></svg>
+                    Scale Bar Detection
+                </h3>
+                <button onclick="closeScaleBarModal()" style="font-size:1.25rem;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:1rem 1.25rem; display:flex; flex-direction:column; gap:0.9rem;">
+
+                <!-- Preview strip -->
+                <div style="background:var(--canvas-bg); border-radius:8px; border:1px solid var(--border-color); overflow:hidden; position:relative;">
+                    <canvas id="scalebar-preview-canvas" style="width:100%; display:block;"></canvas>
+                    <div id="scalebar-status-bar" style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.6); color:#fff; font-size:0.68rem; font-family:var(--font-mono); padding:0.2rem 0.6rem; display:flex; gap:1rem; align-items:center;"></div>
+                </div>
+
+                <!-- Detected info -->
+                <div id="scalebar-info-row" style="background:var(--bg-inset,var(--input-bg)); border:1px solid var(--border-color); border-radius:7px; padding:0.55rem 0.85rem; font-size:0.72rem; color:var(--text-secondary);"></div>
+
+                <!-- µm presets -->
+                <div>
+                    <div style="font-size:0.68rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.4rem;">Select scale bar length</div>
+                    <div style="display:flex; gap:0.3rem; flex-wrap:wrap;" id="scalebar-presets">
+                        <!-- injected by JS -->
+                    </div>
+                </div>
+
+                <!-- Custom input -->
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <label style="font-size:0.72rem; color:var(--text-muted); white-space:nowrap;">Custom µm:</label>
+                    <input id="scalebar-custom-input" type="number" min="0.01" step="0.1" placeholder="e.g. 50"
+                           style="flex:1; font-family:var(--font-mono);" oninput="updateScaleBarPreview()">
+                    <span style="font-size:0.72rem; color:var(--text-dim); font-family:var(--font-mono);">µm</span>
+                </div>
+
+                <!-- Result -->
+                <div id="scalebar-result-row" style="background:var(--primary-glow); border:1px solid var(--primary); border-radius:7px; padding:0.55rem 0.85rem; font-size:0.75rem; font-family:var(--font-mono); color:var(--primary-light); display:none;"></div>
+
+            </div>
+            <div class="modal-footer">
+                <button id="scalebar-apply-btn" onclick="applyScaleBarModal()" class="primary-btn" style="width:auto; padding:0.45rem 1.5rem;" disabled>
+                    ✓ Apply Calibration
+                </button>
+                <button onclick="closeScaleBarModal()" style="padding:0.45rem 1rem; background:var(--input-bg); border:1px solid var(--border-color); color:var(--text-primary); border-radius:6px; cursor:pointer;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Image Rotation ───────────────────────────────────────────────── -->
+    <div class="modal-overlay" id="rotate-modal" onclick="if(event.target===this)closeRotateModal()">
+        <div class="modal-container" style="max-width:640px; width:96%;">
+            <div class="modal-header">
+                <h3 style="font-weight:700; display:flex; align-items:center; gap:0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M16 3h5v5"/></svg>
+                    Rotate Image
+                </h3>
+                <button onclick="closeRotateModal()" style="font-size:1.25rem;">&times;</button>
+            </div>
+
+            <div class="modal-body" style="padding:1rem 1.25rem; display:flex; flex-direction:column; gap:1rem;">
+
+                <!-- Live preview -->
+                <div style="position:relative; display:flex; justify-content:center; align-items:center; background:var(--canvas-bg); border-radius:8px; border:1px solid var(--border-color); overflow:hidden; min-height:260px; cursor:grab;" id="rotate-preview-wrap">
+                    <canvas id="rotate-preview-canvas" style="max-width:100%; max-height:260px; display:block;"></canvas>
+                    <div style="position:absolute; bottom:0.5rem; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.55); color:#fff; font-family:var(--font-mono); font-size:0.72rem; padding:0.2rem 0.65rem; border-radius:20px; pointer-events:none;" id="rotate-angle-badge">0.0°</div>
+                    <div style="position:absolute; top:0.5rem; left:0.5rem; font-size:0.62rem; color:rgba(255,255,255,0.45); pointer-events:none;">Drag to rotate</div>
+                </div>
+
+                <!-- Presets -->
+                <div style="display:flex; gap:0.4rem; flex-wrap:wrap; justify-content:center;">
+                    <button class="rotate-preset-btn" onclick="setRotateAngle(-90)">↺ 90° CCW</button>
+                    <button class="rotate-preset-btn" onclick="setRotateAngle(90)">↻ 90° CW</button>
+                    <button class="rotate-preset-btn" onclick="setRotateAngle(180)">↕ 180°</button>
+                    <button class="rotate-preset-btn" onclick="setRotateAngle(45)">↻ 45°</button>
+                    <button class="rotate-preset-btn" onclick="setRotateAngle(-45)">↺ 45° CCW</button>
+                    <button class="rotate-preset-btn rotate-preset-special" onclick="flipRotateImage('h')">⇔ Flip H</button>
+                    <button class="rotate-preset-btn rotate-preset-special" onclick="flipRotateImage('v')">⇕ Flip V</button>
+                </div>
+
+                <!-- Slider + fine input -->
+                <div style="display:flex; flex-direction:column; gap:0.4rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:0.7rem; color:var(--text-muted);">Rotation angle</span>
+                        <div style="display:flex; align-items:center; gap:0.3rem;">
+                            <input id="rotate-fine-input" type="number" min="-180" max="180" step="0.1" value="0"
+                                   style="width:72px; text-align:center; font-family:var(--font-mono); font-size:0.78rem;"
+                                   oninput="syncRotateFromInput(this.value)">
+                            <span style="font-size:0.75rem; color:var(--text-dim); font-family:var(--font-mono);">°</span>
+                            <button class="rotate-reset-btn" onclick="resetRotateAngle()" title="Reset to 0°">Reset</button>
+                        </div>
+                    </div>
+                    <input id="rotate-slider" type="range" min="-180" max="180" step="0.1" value="0"
+                           oninput="syncRotateFromSlider(this.value)" style="width:100%;">
+                    <div style="display:flex; justify-content:space-between; font-size:0.62rem; color:var(--text-dim); font-family:var(--font-mono);">
+                        <span>−180°</span><span>−90°</span><span>0°</span><span>90°</span><span>180°</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="modal-footer">
+                <button onclick="applyRotateModal()" class="primary-btn" style="width:auto; padding:0.45rem 1.5rem;">
+                    ✓ Apply Rotation
+                </button>
+                <button onclick="closeRotateModal()" style="padding:0.45rem 1rem; background:var(--input-bg); border:1px solid var(--border-color); color:var(--text-primary); border-radius:6px; cursor:pointer;">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification container -->
+    <div id="toast-container"></div>
+
+    <script src="app.js"></script>
+    <script>
+        // Collapsible Accordion Panels
+        document.querySelectorAll('.panel-card .panel-header').forEach(header => {
+            header.addEventListener('click', (e) => {
+                // If clicked on an action button, input or icon in the header, don't collapse
+                if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
+                const card = header.closest('.panel-card');
+                if (card) {
+                    card.classList.toggle('collapsed');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

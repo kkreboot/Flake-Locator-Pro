@@ -1,0 +1,4 @@
+numpy>=1.22.0
+opencv-python>=4.6.0
+pandas>=1.4.0
+scikit-learn>=1.2.0   # required for --method gmm (GMM background model + FP filter)
